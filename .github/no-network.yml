@@ -1,0 +1,10 @@
+rules:
+  - id: no-runtime-network
+    pattern-either:
+      - pattern: fetch(...)
+      - pattern: new WebSocket(...)
+      - pattern: new XMLHttpRequest(...)
+      - pattern: navigator.sendBeacon(...)
+    message: Local runtime must not make network connections.
+    severity: ERROR
+    languages: [typescript, javascript]

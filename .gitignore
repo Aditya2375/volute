@@ -1,0 +1,15 @@
+build/
+*.class
+node_modules/
+.env*
+*.pem
+*.key
+*.jks
+*.p12
+*.csv
+*.zip
+*.png
+evidence/
+*private*
+browser-checks.json
+*.tar.gz

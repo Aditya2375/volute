@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: unit tests
+        run: |
+          javac -d build/classes src/volute/*.java tools/*.java tests/volute/*.java
+          java -cp build/classes volute.TestRunner
+
+  web-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: compile parity reference
+        run: javac -d build/classes src/volute/*.java tools/*.java tests/volute/*.java
+      - name: JS/Java parity
+        run: |
+          node tests/parity.mjs
+          node tests/domain.mjs
+      - name: browser smoke
+        run: |
+          node tools/build-web.mjs
+          node tests/browser-smoke.mjs
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: independent reference
+        run: |
+          python3 -m pip install numpy==2.2.6 scipy==1.15.3
+          python3 tests/reference.py
+      - name: docs drift check
+        # docs/ is built strictly from the source files, so a
+        # fresh build must match byte for byte.
+        run: |
+          rm -rf docs
+          node tools/build-web.mjs
+          git diff --exit-code --stat -- docs/
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0 # gitleaks scans the push range, which a shallow clone does not have
+      - name: gitleaks (full history, pinned binary)
+        # The hosted action scans the push event range (base^..head), which
+        # fails when the range touches the root commit; scan full history
+        # with a sha256-verified binary instead.
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz
+          echo "9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks git --redact --exit-code 2 --log-level warn --config .gitleaks.toml .
+      - name: semgrep (local rules, no account)
+        run: |
+          pipx run --spec semgrep==1.183.0 semgrep --config .github/semgrep-rules.yml --error web/src/ tools/*.mjs tests/*.mjs
+          pipx run --spec semgrep==1.183.0 semgrep --config .github/no-network.yml --error web/src/

@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="A Java-first Heston calibration lab. Fit invented option prices, compare three bounded searches, and separate price fit from parameter truth."
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>volute - a fit is not the truth</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#controls">Skip to controls</a>
+    <header>
+      <a class="brand" href="#">volute <span>/ 26</span></a
+      ><span>HESTON / CALIBRATION / SYNTHETIC ONLY</span>
+    </header>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">15 INVENTED QUOTES / 5 PARAMETERS / 3 STARTS</p>
+        <div class="intro">
+          <h1>A close fit.<br />Not proof of truth.</h1>
+          <p>
+            A model can match prices without revealing one true parameter set.
+            Open the search, the miss and the assumptions behind a Heston fit.
+          </p>
+        </div>
+        <form id="controls" novalidate>
+          <div class="inputs">
+            <label
+              >Invented surface<select id="surface">
+                <option value="0">01 / balanced skew</option>
+                <option value="1">02 / slow, steep skew</option>
+                <option value="2">03 / rising variance</option>
+              </select></label
+            ><label
+              >Relative quote noise / 0 to 100 bps<input
+                id="noise"
+                type="number"
+                min="0"
+                max="100"
+                step="5"
+                value="20"
+                required /></label
+            ><label
+              >Synthetic noise seed / 1 to 9999<input
+                id="seed"
+                type="number"
+                min="1"
+                max="9999"
+                step="1"
+                value="17"
+                required
+            /></label>
+          </div>
+          <button type="submit" id="run">
+            Fit the invented quotes <span aria-hidden="true">↗</span>
+          </button>
+          <p id="status" role="status" aria-live="polite">
+            Preparing the local numerical worker.
+          </p>
+        </form>
+        <p class="callout">
+          European calls on an invented spot of 100 price units, with constant
+          rate 2% and dividend yield 1%. Not market data, a forecast or trading
+          advice. Noise is a relative price perturbation: 20 bps means up to
+          ±0.20%, not a volatility quote or bid-ask spread.
+        </p>
+      </section>
+      <section class="metrics">
+        <div>
+          <span>Calibration price RMSE / units</span
+          ><strong id="rmse">...</strong>
+        </div>
+        <div>
+          <span>Withheld clean-price RMSE / units</span
+          ><strong id="holdout">...</strong>
+        </div>
+        <div>
+          <span>Largest calibration miss / units</span
+          ><strong id="maxerror">...</strong>
+        </div>
+        <div>
+          <span>Pricing refinement gap / units</span
+          ><strong id="gap">...</strong>
+        </div>
+      </section>
+      <section>
+        <div class="section-title">
+          <h2>01 / Open the fitted surface.</h2>
+          <span>Five strikes at each of three expiries</span>
+        </div>
+        <p>
+          The fit minimizes equally weighted squared call-price errors across 15
+          quotes: strikes 80, 90, 100, 110, 120 at 0.25, 1 and 2 years. This is
+          not an implied-volatility or vega-weighted objective. A smaller error
+          can favor higher-priced options.
+        </p>
+        <label class="inspector"
+          >Chart expiry<select id="expiry">
+            <option value="0.25">0.25 years</option>
+            <option value="1" selected>1 year</option>
+            <option value="2">2 years</option>
+          </select></label
+        >
+        <div class="legend">
+          <span class="forest">━ Fitted calls</span
+          ><span>○ Perturbed targets</span
+          ><span>Vertical marks: signed price miss</span>
+        </div>
+        <svg
+          id="prices"
+          role="img"
+          aria-label="Fitted Heston call prices and synthetic calibration targets by strike"
+        ></svg>
+        <p class="caption">
+          Prices, not implied volatilities. Tiny residuals may be invisible at
+          this scale; the quote audit and full ledger retain the numbers. No
+          price is clipped to an arbitrage bound to conceal an integration
+          error.
+        </p>
+      </section>
+      <section>
+        <div class="section-title">
+          <h2>02 / A fit is not identification.</h2>
+          <span>Declared parameter box, not estimated confidence</span>
+        </div>
+        <p id="fit-summary" class="selection"></p>
+        <div class="param-head">
+          <span>Parameter / units / allowed range</span
+          ><span>Synthetic truth</span><span>Selected fit</span>
+        </div>
+        <div id="parameters"></div>
+        <div class="explain">
+          <div>
+            <h3>Stochastic variance.</h3>
+            <p>
+              Under the stated risk-neutral model, dS/S = (r − q)dt + √v dW₁ and
+              dv = κ(θ − v)dt + ξ√v dW₂, with correlated Brownian shocks ρ. v₀
+              and θ are annualized variances, not volatilities. Time is in
+              years. ξ is volatility of variance, not spot volatility.
+            </p>
+          </div>
+          <div>
+            <h3>One diagnostic, not a verdict.</h3>
+            <p id="feller"></p>
+            <p>
+              Feller positivity is not an optimizer constraint here. Failing the
+              strict sufficient condition does not invalidate Fourier pricing;
+              passing it does not establish a good economic model. No variance
+              paths are simulated.
+            </p>
+          </div>
+        </div>
+        <p class="callout">
+          Three starts can agree in a narrow valley. Agreement is not proof of
+          unique parameters, statistical identification, a global optimum or
+          hedge quality. Synthetic truth is used to create the fixture and
+          evaluate withheld prices, never supplied to the optimizer.
+        </p>
+      </section>
+      <section>
+        <div class="section-title">
+          <h2>03 / Keep the search visible.</h2>
+          <span>Bounded Nelder-Mead / 350-iteration cap per start</span>
+        </div>
+        <div id="starts" class="starts"></div>
+        <svg
+          id="lossplot"
+          role="img"
+          aria-label="Selected start best-so-far mean squared calibration price error by iteration"
+        ></svg>
+        <p class="caption">
+          Selected start's best-so-far objective, log₁₀ scale, with display
+          floor 10⁻¹⁶ only. Lower is a better fit to these 15 targets, not a
+          measure of future accuracy. Stopping uses normalized simplex diameter
+          &lt; 2 × 10⁻⁵ and objective spread &lt; 10⁻¹⁰. A budget stop is shown
+          as such, not called convergence.
+        </p>
+      </section>
+      <section>
+        <div class="section-title">
+          <h2>04 / Inspect one price.</h2>
+          <span>Target provenance and residual, without rounding the fit</span>
+        </div>
+        <label class="inspector"
+          >Quote / 1 to 21<input
+            id="quote"
+            type="number"
+            min="1"
+            max="21"
+            step="1"
+            value="8"
+        /></label>
+        <p
+          id="selection"
+          class="selection"
+          role="status"
+          aria-live="polite"
+        ></p>
+        <div class="explain">
+          <div>
+            <h3>The observation.</h3>
+            <dl id="quote-audit"></dl>
+          </div>
+          <div>
+            <h3>The miss.</h3>
+            <dl id="error-audit"></dl>
+          </div>
+        </div>
+        <p class="callout">
+          The six withheld quotes are clean synthetic prices at strikes 85, 100,
+          115 and expiries 0.5, 1.5 years. They are never passed to the search.
+          This is a within-model interpolation check, not a chronological
+          backtest or independent market evidence.
+        </p>
+      </section>
+      <section>
+        <div class="section-title">
+          <h2>05 / Leave the whole trail.</h2>
+          <span>15 fit targets, then 6 withheld checks</span>
+        </div>
+        <p class="caption">
+          Supplemental ledger scrolls both ways. Main parameter, selected quote
+          and search summaries remain above. Price residual = fitted − target;
+          clean truth is shown separately.
+        </p>
+        <div
+          class="table-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="All calibration and withheld price checks"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Quote</th>
+                <th scope="col">Use</th>
+                <th scope="col">Years</th>
+                <th scope="col">Strike</th>
+                <th scope="col">Clean</th>
+                <th scope="col">Target</th>
+                <th scope="col">Fit</th>
+                <th scope="col">Residual</th>
+              </tr>
+            </thead>
+            <tbody id="ledger"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="limitations">
+        <div>
+          <h3>Integration has limits.</h3>
+          <p>
+            A decaying-exponential Heston characteristic function and composite
+            Gauss-Legendre rule price each call. The refinement gap compares
+            16-node panels to 32-node panels with a longer cutoff. It is a
+            diagnostic, not a proved integration error bound. Only the declared
+            parameter, strike and expiry box is supported.
+          </p>
+        </div>
+        <div>
+          <h3>Noise is invented too.</h3>
+          <p>
+            Relative bounded-uniform price perturbations are not a market
+            microstructure model. Noisy targets are not forced to preserve
+            static arbitrage. The fit uses unrounded prices, no bid-ask
+            intervals or confidence estimates. Same-model generation makes this
+            easier than real calibration.
+          </p>
+        </div>
+        <div>
+          <h3>Keep the boundary.</h3>
+          <p>
+            No historical quotes, orders, Greeks, hedging PnL, transaction costs
+            or production calibration claim. A finite search is best-found, not
+            guaranteed optimal. All work stays local after the static files
+            load. Native Safari/Android untested.
+          </p>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <p>
+        Methods:
+        <a href="https://arxiv.org/abs/1511.08718"
+          >Cui et al. / calibration valleys</a
+        >
+        ·
+        <a
+          href="https://rkapl123.github.io/QLAnnotatedSource/d7/d80/class_quant_lib_1_1_analytic_heston_engine.html"
+          >QuantLib / branch choice</a
+        >
+        ·
+        <a
+          href="https://kristofkassa.github.io/derivative_pricing/2023/10/17/fourier_for_heston.html"
+          >Lewis pricing</a
+        >
+      </p>
+      <p>volute / Java core + local numerical worker</p>
+      <p>
+        MIT OR Apache-2.0 · No accounts, uploads, storage or runtime network
+        calls
+      </p>
+    </footer>
+  </body>
+</html>
